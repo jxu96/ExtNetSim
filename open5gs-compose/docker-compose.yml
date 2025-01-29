@@ -1,0 +1,318 @@
+version: '3'
+
+services:
+  mongodb: 
+    image: mongo:6.0
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 3s
+      timeout: 15s
+      retries: 5
+      start_period: 3s
+    container_name: open5gs-mongodb
+    volumes:
+      - volmongodb:/data/db
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    expose:
+      - 27017
+
+  open5gs-base:
+    build:
+      context: open5gs-base
+      args:
+        build_tag: ${BUILD_TAG}
+        build_nf_list: ${BUILD_NF_LIST}
+    image: ${BUILD_USER}/open5gs-base:${BUILD_TAG}
+
+  open5gs-webui:
+    build:
+      context: open5gs-webui
+      args:
+        build_user: ${BUILD_USER}
+        build_tag: ${BUILD_TAG}
+    image: ${BUILD_USER}/open5gs-webui:${BUILD_TAG}
+    container_name: open5gs-webui
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - DB_URI=mongodb://mongodb/open5gs
+      - PORT=3000
+    depends_on:
+      open5gs-base:
+        condition: service_completed_successfully
+      mongodb:
+        condition: service_healthy
+    ports:
+      - "3000:3000/tcp"
+
+  open5gs-nrf:
+    build:
+      context: ./open5gs-nrf
+      args:
+        build_user: ${BUILD_USER}
+        build_tag: ${BUILD_TAG}
+    image: ${BUILD_USER}/open5gs-nrf:${BUILD_TAG}
+    container_name: open5gs-nrf
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ./open5gs-nrf/nrf-v2.7.0.yaml:/usr/local/etc/open5gs/nrf.yaml
+    depends_on:
+      open5gs-base:
+        condition: service_completed_successfully
+    expose:
+      - 80 # SBI
+
+  open5gs-scp:
+    build:
+      context: ./open5gs-scp
+      args:
+        build_user: ${BUILD_USER}
+        build_tag: ${BUILD_TAG}
+    image: ${BUILD_USER}/open5gs-scp:${BUILD_TAG}
+    container_name: open5gs-scp
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ./open5gs-scp/scp-v2.7.0.yaml:/usr/local/etc/open5gs/scp.yaml
+    depends_on:
+      open5gs-base:
+        condition: service_completed_successfully
+      open5gs-nrf:
+        condition: service_started
+    ports:
+      - "2080:2080/tcp" # SBI
+
+  # open5gs-sepp:
+  #   build:
+  #     context: .
+  #     args:
+  #       build_user: ${BUILD_USER}
+  #       build_tag: ${BUILD_TAG}
+  #       build_nf: sepp
+  #   image: ${BUILD_USER}/open5gs-sepp:${BUILD_TAG}
+  #   container_name: open5gs-sepp
+  #   depends_on:
+  #     - open5gs-base
+
+  open5gs-amf:
+    build:
+      context: ./open5gs-amf
+      args:
+        build_user: ${BUILD_USER}
+        build_tag: ${BUILD_TAG}
+    image: ${BUILD_USER}/open5gs-amf:${BUILD_TAG}
+    container_name: open5gs-amf
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ./open5gs-amf/amf-v2.7.0.yaml:/usr/local/etc/open5gs/amf.yaml
+    depends_on:
+      open5gs-base:
+        condition: service_completed_successfully
+      open5gs-scp:
+        condition: service_started
+    expose:
+      - 80 # SBI
+      - 9090 # Metrics
+    ports:
+      - "38412:38412/sctp" # NGAP N2
+    networks:
+      default:
+        ipv4_address: 192.168.8.200
+
+  open5gs-smf:
+    build:
+      context: ./open5gs-smf
+      args:
+        build_user: ${BUILD_USER}
+        build_tag: ${BUILD_TAG}
+    image: ${BUILD_USER}/open5gs-smf:${BUILD_TAG}
+    container_name: open5gs-smf
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ./open5gs-smf/smf-v2.7.0.yaml:/usr/local/etc/open5gs/smf.yaml
+      - ./open5gs-smf/smf.conf:/usr/local/etc/freeDiameter/smf.conf
+    depends_on:
+      open5gs-base:
+        condition: service_completed_successfully
+      open5gs-scp:
+        condition: service_started
+      open5gs-upf:
+        condition: service_started
+    expose:
+      - 80 # SBI
+      - 2123 # N11
+      - 9090 # Metrics
+      - 3868 # Gx Auth
+      - 2152 # N4u (Sxu)
+      - 8805 # N4 (Sxb)
+
+  open5gs-upf:
+    build:
+      context: ./open5gs-upf
+      args:
+        build_user: ${BUILD_USER}
+        build_tag: ${BUILD_TAG}
+    image: ${BUILD_USER}/open5gs-upf:${BUILD_TAG}
+    container_name: open5gs-upf
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ./open5gs-upf/upf-v2.7.0.yaml:/usr/local/etc/open5gs/upf.yaml
+    depends_on:
+      open5gs-base:
+        condition: service_completed_successfully
+    expose:
+      - 9090 # Metrics
+      - 8805 # N4 (Sxb)
+    ports:
+      - "2152:2152/udp" # N3, N4u (Sxu)
+    devices:
+      - "/dev/net/tun:/dev/net/tun"
+    cap_add:
+      - "NET_ADMIN"
+    environment:
+      - SUBNET_V4=192.168.16.1/24
+      # - SUBNET_V6=2001:db8:cafe::1/48
+    networks:
+      default:
+        ipv4_address: 192.168.8.100
+  
+  open5gs-ausf:
+    build:
+      context: ./open5gs-ausf
+      args:
+        build_user: ${BUILD_USER}
+        build_tag: ${BUILD_TAG}
+    image: ${BUILD_USER}/open5gs-ausf:${BUILD_TAG}
+    container_name: open5gs-ausf
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ./open5gs-ausf/ausf-v2.7.0.yaml:/usr/local/etc/open5gs/ausf.yaml
+    depends_on:
+      open5gs-base:
+        condition: service_completed_successfully
+      open5gs-scp:
+        condition: service_started
+    expose:
+      - 80 # SBI
+
+  open5gs-udm:
+    build:
+      context: ./open5gs-udm
+      args:
+        build_user: ${BUILD_USER}
+        build_tag: ${BUILD_TAG}
+    image: ${BUILD_USER}/open5gs-udm:${BUILD_TAG}
+    container_name: open5gs-udm
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ./open5gs-udm/udm-v2.7.0.yaml:/usr/local/etc/open5gs/udm.yaml
+    depends_on:
+      open5gs-base:
+        condition: service_completed_successfully
+      open5gs-scp:
+        condition: service_started
+    expose:
+      - 80 # SBI
+
+  open5gs-udr:
+    build:
+      context: ./open5gs-udr
+      args:
+        build_user: ${BUILD_USER}
+        build_tag: ${BUILD_TAG}
+    image: ${BUILD_USER}/open5gs-udr:${BUILD_TAG}
+    container_name: open5gs-udr
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ./open5gs-udr/udr-v2.7.0.yaml:/usr/local/etc/open5gs/udr.yaml
+    depends_on:
+      open5gs-base:
+        condition: service_completed_successfully
+      mongodb:
+        condition: service_healthy
+      open5gs-scp:
+        condition: service_started
+    expose:
+      - 80 # SBI
+
+  open5gs-pcf:
+    build:
+      context: ./open5gs-pcf
+      args:
+        build_user: ${BUILD_USER}
+        build_tag: ${BUILD_TAG}
+    image: ${BUILD_USER}/open5gs-pcf:${BUILD_TAG}
+    container_name: open5gs-pcf
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ./open5gs-pcf/pcf-v2.7.0.yaml:/usr/local/etc/open5gs/pcf.yaml
+    depends_on:
+      open5gs-base:
+        condition: service_completed_successfully
+      mongodb:
+        condition: service_healthy
+      open5gs-scp:
+        condition: service_started
+    expose:
+      - 80 # SBI
+      - 9090 # Metrics
+
+  open5gs-nssf:
+    build:
+      context: ./open5gs-nssf
+      args:
+        build_user: ${BUILD_USER}
+        build_tag: ${BUILD_TAG}
+    image: ${BUILD_USER}/open5gs-nssf:${BUILD_TAG}
+    container_name: open5gs-nssf
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ./open5gs-nssf/nssf-v2.7.0.yaml:/usr/local/etc/open5gs/nssf.yaml
+    depends_on:
+      open5gs-base:
+        condition: service_completed_successfully
+      open5gs-scp:
+        condition: service_started
+    expose:
+      - 80 # SBI
+
+  open5gs-bsf:
+    build:
+      context: ./open5gs-bsf
+      args:
+        build_user: ${BUILD_USER}
+        build_tag: ${BUILD_TAG}
+        build_nf: bsf
+    image: ${BUILD_USER}/open5gs-bsf:${BUILD_TAG}
+    container_name: open5gs-bsf
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ./open5gs-bsf/bsf-v2.7.0.yaml:/usr/local/etc/open5gs/bsf.yaml
+    depends_on:
+      open5gs-base:
+        condition: service_completed_successfully
+      open5gs-scp:
+        condition: service_started
+    expose:
+      - 80 # SBI
+
+volumes:
+  volmongodb:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 192.168.8.0/24

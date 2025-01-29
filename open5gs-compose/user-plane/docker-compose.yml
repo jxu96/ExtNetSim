@@ -1,0 +1,47 @@
+version: '3'
+
+services:
+  open5gs-smf:
+    image: ${BUILD_USER}/open5gs-smf:${BUILD_TAG}
+    container_name: open5gs-smf-tac${TAC}-sst${SST}-sd${SD}
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ./smf-v2.7.0.yaml:/usr/local/etc/open5gs/smf.yaml
+      - ./smf.conf:/usr/local/etc/freeDiameter/smf.conf
+    depends_on:
+      open5gs-upf:
+        condition: service_started
+    ports:
+      - "${SMF_SBI_PORT}:${SMF_SBI_PORT}" # SBI
+    expose:
+      - 2123 # M11
+      - 9090 # Metrics
+      - 3868 # Gx Auth
+      - 2152 # N4u (Sxu)
+      - 8805 # N4 (Sxb)
+
+  open5gs-upf:
+    image: ${BUILD_USER}/open5gs-upf:${BUILD_TAG}
+    container_name: open5gs-upf-tac${TAC}-sst${SST}-sd${SD}
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ./upf-v2.7.0.yaml:/usr/local/etc/open5gs/upf.yaml
+    ports:
+      - "2152:2152/udp" # N3, N4u (Sxu)
+    expose:
+      - 9090 # Metrics
+      - 8805 # N4 (Sxb)
+    devices:
+      - "/dev/net/tun:/dev/net/tun"
+    cap_add:
+      - "NET_ADMIN"
+    environment:
+      - SUBNET_V4=${SUBNET_V4}
+        
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 192.168.8.0/24

@@ -1,0 +1,9 @@
+[submodule "srsRAN"]
+	path = srsRAN
+	url = https://github.com/srsran/srsRAN_4G.git
+[submodule "open5gs"]
+	path = open5gs
+	url = https://github.com/open5gs/open5gs.git
+[submodule "gnuradio"]
+	path = gnuradio
+	url = https://github.com/gnuradio/gnuradio.git
