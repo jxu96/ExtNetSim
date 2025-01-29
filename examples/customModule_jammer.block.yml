@@ -1,0 +1,58 @@
+id: customModule_jammer 
+label: jammer 
+category: '[customModule]' 
+  
+templates: 
+  imports: from gnuradio import customModule 
+  make: customModule.jammer(${samp_rate}, ${slotlen}, ${min_amplitude}, ${max_amplitude}, ${pattern_frequency}) 
+  
+#  Make one 'parameters' list entry for every parameter you want settable from the GUI. 
+#  Keys include: 
+#  * id (makes the value accessible as keyname, e.g. in the make entry) 
+#  * label (label shown in the GUI) 
+#  * dtype (e.g. int, float, complex, byte, short, xxx_vector, ...) 
+#  * default 
+parameters: 
+- id: samp_rate 
+  label: Sample Rate 
+  dtype: float 
+  default: 1e6 
+  
+- id: slotlen 
+  label: Slot length 
+  dtype: int 
+  default: 10000 
+  unit: samples 
+  repeatable: false 
+  option: 'range(1, 1e6, 1)' 
+  
+- id: min_amplitude 
+  label: minimum aplitude 
+  dtype: float 
+  default: 0.1 
+  unit: '' 
+  repeatable: false 
+  option: 'range(0.0, 10.0, 0.1)' 
+  
+- id: max_amplitude 
+  label: Maximum Amplitude 
+  dtype: float 
+  default: 1.0 
+  unit: '' 
+  repeatable: false 
+  option: 'range(0.0, 10.0, 0.1)' 
+  
+- id: pattern_frequency 
+  label: Pattern Frequency 
+  dtype: float 
+  default: 1.0 
+  unit: Hz 
+  repeatable: false 
+  option: 'range(0.1, 100.0, 0.1)'  
+#  Make one 'inputs' list entry per input and one 'outputs' list entry per output. 
+#  Keys include: 
+#  * label (an identifier for the GUI) 
+#  * domain (optional - stream or message. Default is stream) 
+#  * dtype (e.g. int, float, complex, byte, short, xxx_vector, ...) 
+#  * vlen (optional - data stream vector length. Default is 1) 
+#  * optional (optional - set to 1 for optional inputs. Default is 0) 
